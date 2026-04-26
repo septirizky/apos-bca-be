@@ -165,6 +165,7 @@ class OrderService {
 
     return {
       t_name: order?.Table?.t_name || null,
+      m_code: effectiveMemberCode,
       items,
       summary: {
         food_total: foodTotal,

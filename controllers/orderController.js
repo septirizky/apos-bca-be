@@ -1,4 +1,5 @@
 const orderService = require("../services/orderService");
+const realtimeService = require("../services/realtimeService");
 
 class OrderController {
   async getOrders(req, res) {
@@ -41,6 +42,10 @@ class OrderController {
       const { m_code } = req.body;
 
       const data = await orderService.updateOrderMemberCode(o_id, m_code);
+
+      realtimeService.broadcast("orders_changed", {
+        orderId: data.o_id,
+      });
 
       res.json({
         message: "success update order member code",

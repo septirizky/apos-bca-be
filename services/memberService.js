@@ -7,7 +7,7 @@ class MemberService {
         m_code,
         m_status: "Active",
       },
-      attributes: ["m_id", "m_code", "m_name", "mt_id"],
+      attributes: ["m_id", "m_code", "m_name", "m_point", "m_rate", "mt_id"],
     });
 
     return member;

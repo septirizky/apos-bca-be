@@ -10,6 +10,8 @@ module.exports = (sequelize, DataTypes) => {
       m_code: DataTypes.STRING,
       m_type: DataTypes.STRING,
       m_name: DataTypes.STRING,
+      m_point: DataTypes.DECIMAL(12, 2),
+      m_rate: DataTypes.DECIMAL(8, 2),
       mt_id: DataTypes.INTEGER,
       m_status: DataTypes.STRING,
     },
