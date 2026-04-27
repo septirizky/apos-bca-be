@@ -7,10 +7,22 @@ const {
   ItemSaleDetail,
   ItemSaleDetailOption,
   DownPayment,
+  Voucher,
 } = require("../models");
 
 class PaymentService {
-  async processPayment({ o_id, is_id, u_id, dp_id }) {
+  async processPayment({
+    o_id,
+    is_id,
+    is_counter,
+    u_id,
+    dp_id,
+    payment_method,
+    voucher_code,
+    voucher_id,
+    voucher_amount,
+    apos_partner_ref_id,
+  }) {
     const transaction = await sequelize.transaction();
 
     try {
@@ -66,8 +78,52 @@ class PaymentService {
         }
       }
 
+      const downPayment = dp_id
+        ? await DownPayment.findOne({
+            where: { dp_id },
+            transaction,
+          })
+        : null;
+
+      const voucher = voucher_id
+        ? await Voucher.findOne({
+            where: { v_id: voucher_id },
+            transaction,
+          })
+        : voucher_code
+          ? await Voucher.findOne({
+              where: { v_code: voucher_code },
+              transaction,
+            })
+          : null;
+
+      if (voucher && voucher.v_status !== "New") {
+        throw new Error("Voucher sudah digunakan");
+      }
+
+      const paymentMetadata = {
+        payment_method: payment_method || null,
+        voucher_id: voucher?.v_id || null,
+        voucher_code: voucher?.v_code || voucher_code || null,
+        apos_partner_ref_id: apos_partner_ref_id || null,
+      };
+      const requestedCounter = parseInt(is_counter || 0, 10);
+      const maxCounter = (await ItemSale.max("is_counter", { transaction })) || 0;
+      const nextCounter = parseInt(maxCounter, 10) + 1;
+      const transactionCounter =
+        requestedCounter > parseInt(maxCounter, 10) ? requestedCounter : nextCounter;
+
       await ItemSale.update(
-        { is_status: "Active" },
+        {
+          is_status: "Active",
+          is_payment_status: "Paid",
+          is_transaction_time: new Date(),
+          u_id,
+          is_counter: transactionCounter,
+          is_dp: downPayment ? downPayment.dp_amount : 0,
+          is_voucher_amount: voucher ? voucher.v_nominal : voucher_amount || 0,
+          m_trans_data: JSON.stringify(paymentMetadata),
+        },
         {
           where: { is_id },
           transaction,
@@ -87,11 +143,27 @@ class PaymentService {
         );
       }
 
+      if (voucher) {
+        await Voucher.update(
+          {
+            v_status: "Used",
+            is_id,
+            u_id,
+            v_used_time: new Date(),
+          },
+          {
+            where: { v_id: voucher.v_id, v_status: "New" },
+            transaction,
+          },
+        );
+      }
+
       await transaction.commit();
 
       return {
         success: true,
         is_id,
+        is_counter: transactionCounter,
       };
     } catch (err) {
       await transaction.rollback();

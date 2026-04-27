@@ -11,6 +11,7 @@ const {
   ItemSubcategory,
   ItemCategory,
   Config,
+  ItemSale,
 } = require("../models");
 const discountEngineService = require("./discountEngineService");
 
@@ -41,7 +42,7 @@ class OrderService {
   async getOrderDetail(o_id, { memberCode, discountId, discountMode } = {}) {
     const order = await Order.findOne({
       where: { o_id },
-      attributes: ["o_id", "t_id", "o_start_time", "m_code"],
+      attributes: ["o_id", "is_id", "t_id", "o_start_time", "m_code"],
       include: [
         {
           model: Tables,
@@ -162,8 +163,13 @@ class OrderService {
     const vatPercent = parseFloat(taxConfig?.c_value || 0);
     const pbjt = ((subtotal + cookingChargeTotal) * vatPercent) / 100;
     const total = subtotal + cookingChargeTotal + pbjt;
+    const maxCounter = (await ItemSale.max("is_counter")) || 0;
+    const nextCounter = parseInt(maxCounter, 10) + 1;
 
     return {
+      o_id: order?.o_id || null,
+      is_id: order?.is_id || null,
+      next_is_counter: nextCounter,
       t_name: order?.Table?.t_name || null,
       m_code: effectiveMemberCode,
       items,

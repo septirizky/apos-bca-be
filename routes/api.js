@@ -7,7 +7,8 @@ const MemberController = require("../controllers/memberController");
 const DiscountController = require("../controllers/discountController");
 const ConfigController = require("../controllers/configController");
 const DownPaymentController = require("../controllers/downPaymentController");
-// const PaymentController = require("../controllers/paymentController");
+const VoucherController = require("../controllers/voucherController");
+const PaymentController = require("../controllers/paymentController");
 
 /* LOGIN */
 router.post("/login-pin", AuthController.loginPin);
@@ -30,7 +31,10 @@ router.get("/branch-name", ConfigController.getBranchName);
 /* DOWN PAYMENT */
 router.get("/down-payments", DownPaymentController.getAll);
 
+/* VOUCHER */
+router.post("/vouchers/validate", VoucherController.validate);
+
 /* PAYMENT */
-// router.post("/payment", PaymentController.pay);
+router.post("/payment", PaymentController.pay);
 
 module.exports = router;

@@ -31,6 +31,7 @@ const ItemSaleDetailOption = require("./ItemSaleDetailOption")(
 );
 
 const DownPayment = require("./DownPayment")(sequelize, Sequelize);
+const Voucher = require("./Voucher")(sequelize, Sequelize);
 
 const User = require("./User")(sequelize, Sequelize);
 
@@ -98,6 +99,10 @@ ItemSaleDetailOption.belongsTo(ItemSaleDetail, { foreignKey: "isd_id" });
 ItemSale.hasMany(DownPayment, { foreignKey: "is_id" });
 DownPayment.belongsTo(ItemSale, { foreignKey: "is_id" });
 
+// ITEM SALE -> VOUCHER
+ItemSale.hasMany(Voucher, { foreignKey: "is_id" });
+Voucher.belongsTo(ItemSale, { foreignKey: "is_id" });
+
 User.hasMany(ItemSaleDetail, { foreignKey: "u_id" });
 ItemSaleDetail.belongsTo(User, { foreignKey: "u_id" });
 
@@ -137,6 +142,7 @@ module.exports = {
   ItemSaleDetailOption,
 
   DownPayment,
+  Voucher,
 
   User,
   PiMlpLog,
