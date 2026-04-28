@@ -29,6 +29,25 @@ class ConfigService {
 
     return config ? config.c_value : null;
   }
+
+  async getReceiptInfo() {
+    const configs = await Config.findAll({
+      where: {
+        c_key: ["INFO1", "INFO2", "INFO3"],
+      },
+    });
+
+    const infoMap = configs.reduce((acc, config) => {
+      acc[config.c_key] = config.c_value;
+      return acc;
+    }, {});
+
+    return {
+      info1: infoMap.INFO1 || "",
+      info2: infoMap.INFO2 || "",
+      info3: infoMap.INFO3 || "",
+    };
+  }
 }
 
 module.exports = new ConfigService();

@@ -32,9 +32,11 @@ const ItemSaleDetailOption = require("./ItemSaleDetailOption")(
 
 const DownPayment = require("./DownPayment")(sequelize, Sequelize);
 const Voucher = require("./Voucher")(sequelize, Sequelize);
+const VoucherSet = require("./VoucherSet")(sequelize, Sequelize);
 
 const User = require("./User")(sequelize, Sequelize);
 
+const LogLock = require("./LogLock")(sequelize, Sequelize);
 const PiMlpLog = require("./PiMlpLog")(sequelize, Sequelize);
 
 /*
@@ -66,6 +68,10 @@ Tables.hasMany(Order, { foreignKey: "t_id" });
 // ORDER -> AREA
 Order.belongsTo(TablesArea, { foreignKey: "ta_id" });
 TablesArea.hasMany(Order, { foreignKey: "ta_id" });
+
+// ORDER -> USER
+Order.belongsTo(User, { foreignKey: "u_id" });
+User.hasMany(Order, { foreignKey: "u_id" });
 
 // TABLE -> SECTION
 Tables.belongsTo(TablesSection, { foreignKey: "ts_id" });
@@ -103,8 +109,20 @@ DownPayment.belongsTo(ItemSale, { foreignKey: "is_id" });
 ItemSale.hasMany(Voucher, { foreignKey: "is_id" });
 Voucher.belongsTo(ItemSale, { foreignKey: "is_id" });
 
+// VOUCHER -> VOUCHER SET
+Voucher.belongsTo(VoucherSet, { foreignKey: "vs_id" });
+VoucherSet.hasMany(Voucher, { foreignKey: "vs_id" });
+
 User.hasMany(ItemSaleDetail, { foreignKey: "u_id" });
 ItemSaleDetail.belongsTo(User, { foreignKey: "u_id" });
+
+// TABLE -> LOG LOCK
+Tables.hasMany(LogLock, { foreignKey: "t_id" });
+LogLock.belongsTo(Tables, { foreignKey: "t_id" });
+
+// USER -> LOG LOCK
+User.hasMany(LogLock, { foreignKey: "u_id" });
+LogLock.belongsTo(User, { foreignKey: "u_id" });
 
 /*
 |--------------------------------------------------------------------------
@@ -143,7 +161,9 @@ module.exports = {
 
   DownPayment,
   Voucher,
+  VoucherSet,
 
   User,
+  LogLock,
   PiMlpLog,
 };

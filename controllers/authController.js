@@ -12,7 +12,7 @@ class AuthController {
           u_pin: pin,
           u_status: "Active",
           ur_id: {
-            [Op.in]: [3, 6, 27],
+            [Op.in]: [3, 6, 12, 16, 21, 25, 26, 27],
           },
         },
         attributes: ["u_id", "u_name", "ur_id"],

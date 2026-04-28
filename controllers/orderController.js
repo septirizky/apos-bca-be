@@ -69,6 +69,90 @@ class OrderController {
       });
     }
   }
+
+  async lockOrder(req, res) {
+    try {
+      const { o_id } = req.params;
+      const { u_id, pos_id, pos_ip } = req.body;
+
+      if (!u_id) {
+        return res.status(400).json({
+          message: "User ID wajib diisi",
+        });
+      }
+
+      const data = await orderService.lockOrder(o_id, {
+        userId: u_id,
+        posId: pos_id,
+        posIp: pos_ip,
+      });
+
+      realtimeService.broadcast("orders_changed", {
+        orderId: data.order_id,
+      });
+
+      res.json({
+        message: "success lock order",
+        lock: data,
+      });
+    } catch (err) {
+      if (err.message === "ORDER_NOT_FOUND") {
+        return res.status(404).json({
+          message: "Order tidak ditemukan",
+        });
+      }
+
+      if (err.message === "ORDER_LOCKED") {
+        return res.status(409).json({
+          message: err.lockedBy
+            ? `Meja sedang digunakan oleh ${err.lockedBy}`
+            : "Meja sedang digunakan di device lain",
+        });
+      }
+
+      res.status(500).json({
+        error: err.message,
+      });
+    }
+  }
+
+  async unlockOrder(req, res) {
+    try {
+      const { o_id } = req.params;
+      const { u_id, pos_id, pos_ip } = req.body;
+
+      if (!u_id) {
+        return res.status(400).json({
+          message: "User ID wajib diisi",
+        });
+      }
+
+      const data = await orderService.unlockOrder(o_id, {
+        userId: u_id,
+        posId: pos_id,
+        posIp: pos_ip,
+      });
+
+      realtimeService.broadcast("orders_changed", {
+        orderId: data.order_id,
+      });
+
+      res.json({
+        message: "success unlock order",
+        lock: data,
+      });
+    } catch (err) {
+      if (err.message === "ORDER_NOT_FOUND") {
+        return res.status(404).json({
+          message: "Order tidak ditemukan",
+        });
+      }
+
+      res.status(500).json({
+        error: err.message,
+      });
+    }
+  }
 }
 
 module.exports = new OrderController();

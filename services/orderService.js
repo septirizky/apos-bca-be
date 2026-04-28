@@ -1,4 +1,5 @@
 const {
+  Sequelize,
   Order,
   Member,
   Tables,
@@ -6,6 +7,8 @@ const {
   TablesSection,
   OrderDetail,
   OrderDetailOption,
+  User,
+  LogLock,
   Item,
   Options,
   ItemSubcategory,
@@ -33,7 +36,47 @@ class OrderService {
             },
           ],
         },
+        {
+          model: User,
+          attributes: ["u_id", "u_name"],
+          required: false,
+        },
       ],
+      attributes: {
+        include: [
+          [
+            Sequelize.literal(`(
+              SELECT ll.lock_state
+              FROM log_lock ll
+              WHERE ll.t_id = \`OrderModel\`.\`t_id\`
+              ORDER BY ll.l_id DESC
+              LIMIT 1
+            )`),
+            "latest_lock_state",
+          ],
+          [
+            Sequelize.literal(`(
+              SELECT ll.u_id
+              FROM log_lock ll
+              WHERE ll.t_id = \`OrderModel\`.\`t_id\`
+              ORDER BY ll.l_id DESC
+              LIMIT 1
+            )`),
+            "latest_lock_user_id",
+          ],
+          [
+            Sequelize.literal(`(
+              SELECT u.u_name
+              FROM log_lock ll
+              LEFT JOIN \`user\` u ON u.u_id = ll.u_id
+              WHERE ll.t_id = \`OrderModel\`.\`t_id\`
+              ORDER BY ll.l_id DESC
+              LIMIT 1
+            )`),
+            "latest_lock_user_name",
+          ],
+        ],
+      },
     });
 
     return orders;
@@ -42,11 +85,16 @@ class OrderService {
   async getOrderDetail(o_id, { memberCode, discountId, discountMode } = {}) {
     const order = await Order.findOne({
       where: { o_id },
-      attributes: ["o_id", "is_id", "t_id", "o_start_time", "m_code"],
+      attributes: ["o_id", "is_id", "t_id", "o_start_time", "m_code", "u_id"],
       include: [
         {
           model: Tables,
           attributes: ["t_name"],
+          required: false,
+        },
+        {
+          model: User,
+          attributes: ["u_id", "u_name"],
           required: false,
         },
       ],
@@ -171,6 +219,8 @@ class OrderService {
       is_id: order?.is_id || null,
       next_is_counter: nextCounter,
       t_name: order?.Table?.t_name || null,
+      u_id: order?.u_id || null,
+      u_name: order?.User?.u_name || null,
       m_code: effectiveMemberCode,
       items,
       summary: {
@@ -222,6 +272,104 @@ class OrderService {
       o_id: order.o_id,
       m_code: order.m_code,
     };
+  }
+
+  async lockOrder(o_id, { userId, posId, posIp }) {
+    const order = await Order.findByPk(o_id, {
+      attributes: ["o_id", "t_id"],
+    });
+
+    if (!order) {
+      throw new Error("ORDER_NOT_FOUND");
+    }
+
+    const latestLock = await LogLock.findOne({
+      where: { t_id: order.t_id },
+      order: [["l_id", "DESC"]],
+      include: [
+        {
+          model: User,
+          attributes: ["u_name"],
+          required: false,
+        },
+      ],
+    });
+
+    const latestState = latestLock?.lock_state;
+    const lockedByOtherUser =
+      latestState === "Locked" &&
+      String(latestLock?.u_id || "") !== String(userId || "");
+
+    if (lockedByOtherUser) {
+      const err = new Error("ORDER_LOCKED");
+      err.lockedBy = latestLock?.User?.u_name || null;
+      throw err;
+    }
+
+    const lockId = latestState === "Locked"
+      ? latestLock.lock_id
+      : this.generateLockId();
+
+    const lock = await LogLock.create({
+      u_id: userId,
+      t_id: order.t_id,
+      lock_id: lockId,
+      l_type: "Lock",
+      pos_id: posId || null,
+      pos_ip: posIp || null,
+      lock_state: "Locked",
+      l_entry: this.nowWib(),
+    });
+
+    return {
+      order_id: order.o_id,
+      t_id: order.t_id,
+      lock_id: lock.lock_id,
+      lock_state: lock.lock_state,
+    };
+  }
+
+  async unlockOrder(o_id, { userId, posId, posIp }) {
+    const order = await Order.findByPk(o_id, {
+      attributes: ["o_id", "t_id"],
+    });
+
+    if (!order) {
+      throw new Error("ORDER_NOT_FOUND");
+    }
+
+    const latestLock = await LogLock.findOne({
+      where: { t_id: order.t_id },
+      order: [["l_id", "DESC"]],
+    });
+
+    const lock = await LogLock.create({
+      u_id: userId,
+      t_id: order.t_id,
+      lock_id: latestLock?.lock_id || this.generateLockId(),
+      l_type: "Unlock",
+      pos_id: posId || null,
+      pos_ip: posIp || null,
+      lock_state: "Unlocked",
+      l_entry: this.nowWib(),
+    });
+
+    return {
+      order_id: order.o_id,
+      t_id: order.t_id,
+      lock_id: lock.lock_id,
+      lock_state: lock.lock_state,
+    };
+  }
+
+  generateLockId() {
+    return Array.from({ length: 32 }, () =>
+      Math.floor(Math.random() * 16).toString(16),
+    ).join("");
+  }
+
+  nowWib() {
+    return Sequelize.literal("DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR)");
   }
 }
 

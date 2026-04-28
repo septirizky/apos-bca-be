@@ -1,4 +1,4 @@
-const { Voucher } = require("../models");
+const { Voucher, VoucherSet } = require("../models");
 
 class VoucherService {
   async validateVoucher(v_code, { allowExpired = false } = {}) {
@@ -15,6 +15,12 @@ class VoucherService {
       where: {
         v_code: normalizedCode,
       },
+      include: [
+        {
+          model: VoucherSet,
+          attributes: ["vs_id", "vs_name"],
+        },
+      ],
     });
 
     if (!voucher) {
@@ -88,6 +94,8 @@ class VoucherService {
       v_start_date: voucher.v_start_date,
       v_end_date: voucher.v_end_date,
       v_status: voucher.v_status,
+      vs_id: voucher.vs_id,
+      vs_name: voucher.VoucherSet?.vs_name || null,
       expired,
     };
   }

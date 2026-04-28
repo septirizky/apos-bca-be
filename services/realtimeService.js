@@ -98,7 +98,7 @@ class RealtimeService {
         (SELECT COUNT(*) FROM \`order\`) AS order_count,
         (SELECT COALESCE(MAX(o_id), 0) FROM \`order\`) AS last_order_id,
         (SELECT COALESCE(GROUP_CONCAT(CONCAT(o_id, ':', COALESCE(m_code, '')) ORDER BY o_id SEPARATOR '|'), '') FROM \`order\`) AS member_codes,
-        (SELECT COALESCE(SUM(CASE WHEN o_locked = 'True' THEN 1 ELSE 0 END), 0) FROM \`order\`) AS locked_count,
+        (SELECT COALESCE(MAX(l_id), 0) FROM log_lock) AS last_lock_id,
         (SELECT COALESCE(COUNT(*), 0) FROM order_detail) AS detail_count,
         (SELECT COALESCE(MAX(od_id), 0) FROM order_detail) AS last_detail_id,
         (SELECT COALESCE(SUM(od_quantity), 0) FROM order_detail) AS total_quantity,
