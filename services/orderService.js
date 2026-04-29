@@ -321,6 +321,17 @@ class OrderService {
       l_entry: this.nowWib(),
     });
 
+    await Tables.update(
+      {
+        t_lock_id: lock.lock_id,
+        t_locked_by: lock.u_id,
+        t_last_ping: this.nowWib(),
+      },
+      {
+        where: { t_id: order.t_id },
+      },
+    );
+
     return {
       order_id: order.o_id,
       t_id: order.t_id,
@@ -353,6 +364,17 @@ class OrderService {
       lock_state: "Unlocked",
       l_entry: this.nowWib(),
     });
+
+    await Tables.update(
+      {
+        t_lock_id: null,
+        t_locked_by: null,
+        t_last_ping: this.nowWib(),
+      },
+      {
+        where: { t_id: order.t_id },
+      },
+    );
 
     return {
       order_id: order.o_id,
