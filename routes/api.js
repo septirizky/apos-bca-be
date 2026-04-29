@@ -9,6 +9,7 @@ const ConfigController = require("../controllers/configController");
 const DownPaymentController = require("../controllers/downPaymentController");
 const VoucherController = require("../controllers/voucherController");
 const PaymentController = require("../controllers/paymentController");
+const LogController = require("../controllers/logController");
 
 /* LOGIN */
 router.post("/login-pin", AuthController.loginPin);
@@ -40,5 +41,8 @@ router.post("/vouchers/validate", VoucherController.validate);
 
 /* PAYMENT */
 router.post("/payment", PaymentController.pay);
+
+/* LOG */
+router.post("/logs/pi-mlp", LogController.savePiMlpLog);
 
 module.exports = router;

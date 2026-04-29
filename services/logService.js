@@ -1,4 +1,4 @@
-const { PiMlpLog } = require("../models");
+const { PiMlpLog, Sequelize } = require("../models");
 
 class LogService {
   async saveLog({
@@ -35,7 +35,7 @@ class LogService {
 
       l_success: success ? "True" : "False",
 
-      l_entry: new Date(),
+      l_entry: Sequelize.literal("DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR)"),
     });
   }
 }
