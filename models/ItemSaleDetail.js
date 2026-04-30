@@ -52,6 +52,10 @@ module.exports = (sequelize, DataTypes) => {
 
       isd_service_free: DataTypes.ENUM("False", "True"),
 
+      isd_entry: DataTypes.DATE,
+
+      isd_deletion: DataTypes.DATE,
+
       isd_status: DataTypes.ENUM("Deleted", "Suspended", "Active"),
     },
     {

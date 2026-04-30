@@ -29,6 +29,12 @@ const ItemSaleDetailOption = require("./ItemSaleDetailOption")(
   sequelize,
   Sequelize,
 );
+const ItemSalePayment = require("./ItemSalePayment")(sequelize, Sequelize);
+const ItemSaleDiscount = require("./ItemSaleDiscount")(sequelize, Sequelize);
+const OrderHistory = require("./OrderHistory")(sequelize, Sequelize);
+const OrderHistoryDetail = require("./OrderHistoryDetail")(sequelize, Sequelize);
+const LogPrint = require("./LogPrint")(sequelize, Sequelize);
+const CardType = require("./CardType")(sequelize, Sequelize);
 
 const DownPayment = require("./DownPayment")(sequelize, Sequelize);
 const Voucher = require("./Voucher")(sequelize, Sequelize);
@@ -80,6 +86,15 @@ TablesSection.hasMany(Tables, { foreignKey: "ts_id" });
 // ITEM SALE -> ITEM SALE DETAIL
 ItemSale.hasMany(ItemSaleDetail, { foreignKey: "is_id" });
 ItemSaleDetail.belongsTo(ItemSale, { foreignKey: "is_id" });
+
+ItemSale.hasMany(ItemSalePayment, { foreignKey: "is_id" });
+ItemSalePayment.belongsTo(ItemSale, { foreignKey: "is_id" });
+
+ItemSale.hasMany(ItemSaleDiscount, { foreignKey: "is_id" });
+ItemSaleDiscount.belongsTo(ItemSale, { foreignKey: "is_id" });
+
+OrderHistory.hasMany(OrderHistoryDetail, { foreignKey: "oh_id" });
+OrderHistoryDetail.belongsTo(OrderHistory, { foreignKey: "oh_id" });
 
 // ITEM -> SUBCATEGORY
 Item.belongsTo(ItemSubcategory, { foreignKey: "isc_id" });
@@ -158,6 +173,12 @@ module.exports = {
   ItemSale,
   ItemSaleDetail,
   ItemSaleDetailOption,
+  ItemSalePayment,
+  ItemSaleDiscount,
+  OrderHistory,
+  OrderHistoryDetail,
+  LogPrint,
+  CardType,
 
   DownPayment,
   Voucher,

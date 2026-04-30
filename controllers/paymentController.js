@@ -16,6 +16,16 @@ class PaymentController {
         voucher_id,
         voucher_amount,
         apos_partner_ref_id,
+        apos_tx_status,
+        apos_feature_type,
+        apos_trace_no,
+        apos_approval_code,
+        apos_ref_no,
+        apos_merchant_id,
+        apos_terminal_id,
+        apos_acquirer_type,
+        pos_id,
+        pos_ip,
       } = req.body;
 
       if (!o_id || !is_id || !u_id) {
@@ -35,6 +45,16 @@ class PaymentController {
         voucher_id,
         voucher_amount,
         apos_partner_ref_id,
+        apos_tx_status,
+        apos_feature_type,
+        apos_trace_no,
+        apos_approval_code,
+        apos_ref_no,
+        apos_merchant_id,
+        apos_terminal_id,
+        apos_acquirer_type,
+        pos_id,
+        pos_ip,
       };
 
       const result = await paymentService.processPayment({
@@ -48,6 +68,17 @@ class PaymentController {
         voucher_id,
         voucher_amount,
         apos_partner_ref_id,
+        apos_tx_status,
+        apos_feature_type,
+        apos_trace_no,
+        apos_approval_code,
+        apos_ref_no,
+        apos_merchant_id,
+        apos_terminal_id,
+        apos_acquirer_type,
+        pos_id,
+        pos_ip,
+        u_name,
       });
 
       await logService.saveLog({
