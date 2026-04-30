@@ -187,6 +187,7 @@ class OrderService {
 
       return {
         ...row,
+        od_name: row.od_name || row.Item?.i_name || "",
         qty,
         sell_price: sellPrice,
         item_total: itemTotal,

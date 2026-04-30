@@ -190,6 +190,7 @@ class DiscountEngineService {
 
             return {
               ...entry,
+              is_max_discount_capped: true,
               discount_percent: scaledEntryPercent,
               discount_amount: scaledEntryAmount,
               discount_value: scaledEntryAmount * -1,

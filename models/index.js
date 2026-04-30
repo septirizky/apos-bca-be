@@ -35,6 +35,8 @@ const OrderHistory = require("./OrderHistory")(sequelize, Sequelize);
 const OrderHistoryDetail = require("./OrderHistoryDetail")(sequelize, Sequelize);
 const LogPrint = require("./LogPrint")(sequelize, Sequelize);
 const CardType = require("./CardType")(sequelize, Sequelize);
+const CardTypePattern = require("./CardTypePattern")(sequelize, Sequelize);
+const BranchEdc = require("./BranchEdc")(sequelize, Sequelize);
 
 const DownPayment = require("./DownPayment")(sequelize, Sequelize);
 const Voucher = require("./Voucher")(sequelize, Sequelize);
@@ -95,6 +97,9 @@ ItemSaleDiscount.belongsTo(ItemSale, { foreignKey: "is_id" });
 
 OrderHistory.hasMany(OrderHistoryDetail, { foreignKey: "oh_id" });
 OrderHistoryDetail.belongsTo(OrderHistory, { foreignKey: "oh_id" });
+
+CardType.hasMany(CardTypePattern, { foreignKey: "ct_id" });
+CardTypePattern.belongsTo(CardType, { foreignKey: "ct_id" });
 
 // ITEM -> SUBCATEGORY
 Item.belongsTo(ItemSubcategory, { foreignKey: "isc_id" });
@@ -179,6 +184,8 @@ module.exports = {
   OrderHistoryDetail,
   LogPrint,
   CardType,
+  CardTypePattern,
+  BranchEdc,
 
   DownPayment,
   Voucher,

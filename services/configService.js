@@ -30,6 +30,24 @@ class ConfigService {
     return config ? config.c_value : null;
   }
 
+  async getBranchLogInfo() {
+    const configs = await Config.findAll({
+      where: {
+        c_key: ["BRANCH_ID", "BRANCH_NAME"],
+      },
+    });
+
+    const configMap = configs.reduce((acc, config) => {
+      acc[config.c_key] = config.c_value;
+      return acc;
+    }, {});
+
+    return {
+      br_id: parseInt(configMap.BRANCH_ID || "1", 10) || 1,
+      br_name: configMap.BRANCH_NAME || "POS",
+    };
+  }
+
   async getReceiptInfo() {
     const configs = await Config.findAll({
       where: {

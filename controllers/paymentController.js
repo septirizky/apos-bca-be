@@ -1,9 +1,17 @@
 const paymentService = require("../services/paymentService");
 const logService = require("../services/logService");
+const configService = require("../services/configService");
 
 class PaymentController {
   async pay(req, res) {
+    let branchLogInfo = {
+      br_id: 1,
+      br_name: "POS",
+    };
+
     try {
+      branchLogInfo = await configService.getBranchLogInfo();
+
       const {
         o_id,
         is_id,
@@ -21,6 +29,7 @@ class PaymentController {
         apos_trace_no,
         apos_approval_code,
         apos_ref_no,
+        apos_card_number,
         apos_merchant_id,
         apos_terminal_id,
         apos_acquirer_type,
@@ -50,6 +59,7 @@ class PaymentController {
         apos_trace_no,
         apos_approval_code,
         apos_ref_no,
+        apos_card_number,
         apos_merchant_id,
         apos_terminal_id,
         apos_acquirer_type,
@@ -73,6 +83,7 @@ class PaymentController {
         apos_trace_no,
         apos_approval_code,
         apos_ref_no,
+        apos_card_number,
         apos_merchant_id,
         apos_terminal_id,
         apos_acquirer_type,
@@ -82,8 +93,8 @@ class PaymentController {
       });
 
       await logService.saveLog({
-        br_id: 1,
-        br_name: "POS",
+        br_id: branchLogInfo.br_id,
+        br_name: branchLogInfo.br_name,
 
         u_id,
         u_name,
@@ -107,8 +118,8 @@ class PaymentController {
       });
     } catch (err) {
       await logService.saveLog({
-        br_id: 1,
-        br_name: "POS",
+        br_id: branchLogInfo.br_id,
+        br_name: branchLogInfo.br_name,
 
         u_id: req.body.u_id,
         u_name: req.body.u_name,

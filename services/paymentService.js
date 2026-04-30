@@ -23,6 +23,8 @@ const {
   DownPayment,
   Voucher,
   CardType,
+  CardTypePattern,
+  BranchEdc,
   User,
 } = require("../models");
 const discountEngineService = require("./discountEngineService");
@@ -67,6 +69,7 @@ class PaymentService {
     apos_trace_no,
     apos_approval_code,
     apos_ref_no,
+    apos_card_number,
     apos_acquirer_type,
     pos_id,
     pos_ip,
@@ -197,14 +200,11 @@ class PaymentService {
           is_date: this.todayWib(),
           is_transaction_time: this.nowWib(),
           is_discount_amount: calculated.discountTotal,
-          is_discount_percent:
-            calculated.totalBeforeDiscount > 0
-              ? (calculated.discountTotal / calculated.totalBeforeDiscount) * 100
-              : 0,
+          is_discount_percent: 0,
           is_vat_amount: calculated.pbjt,
           is_vat_percent: vatPercent,
-          is_dp: dpAmount,
-          is_voucher_amount: voucherAmountValue,
+          is_dp: 0,
+          is_voucher_amount: 0,
           is_total_before_disc: calculated.totalBeforeDiscount,
           is_total_before_vat: calculated.subtotal,
           is_cooking_charge: calculated.cookingCharge,
@@ -251,7 +251,7 @@ class PaymentService {
             isd_item_point: 0,
             isd_ratio: 0,
             isd_description: "",
-            isd_name: row.od_name || item.i_name || "",
+            isd_name: "",
             isd_alt_name: row.od_alt_name || "",
             isd_tag: "",
             isd_tax_free: row.od_tax_free || "False",
@@ -291,6 +291,7 @@ class PaymentService {
         apos_trace_no,
         apos_approval_code,
         apos_ref_no,
+        apos_card_number,
         apos_acquirer_type,
         transaction,
       });
@@ -350,7 +351,7 @@ class PaymentService {
           oh_table_area: order.TablesArea?.ta_name || "",
           oh_options: "",
           oh_entry: this.nowWib(),
-          oh_deletion: ZERO_DATE,
+          oh_deletion: this.zeroMysqlDate(),
           oh_status: "Active",
         },
         { transaction },
@@ -458,6 +459,7 @@ class PaymentService {
     apos_trace_no,
     apos_approval_code,
     apos_ref_no,
+    apos_card_number,
     apos_acquirer_type,
     transaction,
   }) {
@@ -506,15 +508,21 @@ class PaymentService {
     }
 
     if (cardAmount > 0 || paymentMethod) {
-      const cardType = await this.resolveCardType(apos_acquirer_type, transaction);
+      const cardMeta = await this.resolveCardPaymentMeta({
+        branchId,
+        cardNumber: apos_card_number,
+        acquirerType: apos_acquirer_type,
+        transaction,
+      });
       await ItemSalePayment.create(
         this.paymentRow({
           branchId,
           isId,
           type: "Card",
           amount: cardAmount,
-          ctId: cardType.id,
-          cardNumber: apos_ref_no || apos_trace_no || "",
+          ctId: cardMeta.cardTypeId,
+          beId: cardMeta.branchEdcId,
+          cardNumber: cardMeta.cardNumber,
           trace: apos_trace_no || "",
           approval: apos_approval_code || "",
           rrn: apos_ref_no || "",
@@ -522,7 +530,7 @@ class PaymentService {
         { transaction },
       );
       paymentLines.push({
-        type: cardType.name || paymentMethod || "CARD",
+        type: cardMeta.cardTypeName || paymentMethod || "CARD",
         detail: "**** ****",
         amount: cardAmount,
       });
@@ -548,7 +556,7 @@ class PaymentService {
           ohd_entry_time: this.nowWib(),
           ohd_entry: this.zeroMysqlDate(),
           ohd_deletion: this.zeroMysqlDate(),
-          ohd_stamp: this.nowWib(),
+          ohd_stamp: Sequelize.literal("CURRENT_TIMESTAMP"),
           ohd_status: "Active",
         },
         { transaction },
@@ -562,6 +570,7 @@ class PaymentService {
     type,
     amount,
     ctId = 0,
+    beId = 0,
     voucherId = 0,
     dpId = 0,
     cardNumber = "",
@@ -580,7 +589,7 @@ class PaymentService {
       ct_id_detected: ctId,
       cc_id: 0,
       v_id: voucherId,
-      be_id: 0,
+      be_id: beId,
       dt_id: 0,
       ce_id: 0,
       dp_id: dpId,
@@ -607,22 +616,52 @@ class PaymentService {
     };
   }
 
-  async resolveCardType(acquirerType, transaction) {
-    if (!acquirerType) return { id: 0, name: "" };
+  async resolveCardPaymentMeta({ branchId, cardNumber, acquirerType, transaction }) {
+    const bin = this.extractCardBin(cardNumber);
+    const [branchEdc, cardPattern] = await Promise.all([
+      BranchEdc.findOne({
+        where: {
+          br_id: branchId,
+          be_name: { [Sequelize.Op.like]: "%BCA%" },
+          [Sequelize.Op.or]: [{ be_status: "Active" }, { be_status: null }],
+        },
+        attributes: ["be_id"],
+        transaction,
+      }),
+      bin
+        ? CardTypePattern.findOne({
+            where: {
+              cp_status: "Active",
+              cp_pattern: bin,
+            },
+            attributes: ["ct_id"],
+            transaction,
+          })
+        : null,
+    ]);
+
+    const cardTypeId = cardPattern?.ct_id || 52;
 
     const cardType = await CardType.findOne({
       where: {
+        ct_id: cardTypeId,
         ct_status: "Active",
-        ct_name: { [Sequelize.Op.like]: `%${acquirerType}%` },
       },
-      attributes: ["ct_id"],
+      attributes: ["ct_name"],
       transaction,
     });
 
     return {
-      id: cardType?.ct_id || 0,
-      name: cardType?.ct_name || "",
+      branchEdcId: branchEdc?.be_id || 0,
+      cardTypeId,
+      cardTypeName: cardType?.ct_name || acquirerType || "",
+      cardNumber: bin,
     };
+  }
+
+  extractCardBin(cardNumber) {
+    const digits = String(cardNumber || "").replace(/\D/g, "");
+    return digits.length >= 6 ? digits.slice(0, 6) : "";
   }
 
   async unlockTable({ order, userId, posId, posIp, transaction }) {
