@@ -78,6 +78,19 @@ class PrinterService {
       .trim();
   }
 
+  normalizeReceiptText(content) {
+    const text = this.normalizePrintText(content || "");
+    return text
+      .split("\n")
+      .filter((line) => !this.isWelcomeLine(line))
+      .map((line) => {
+        const tableMatch = line.match(/^\s*(Table\s+.+?)\s*$/);
+        if (tableMatch) return tableMatch[1];
+        return this.normalizeReceiptLine(line);
+      })
+      .join("\n");
+  }
+
   formattedTextBuffer(text) {
     const normalFont = Buffer.from([0x1b, 0x21, 0x00]);
     const bigFont = Buffer.from([0x1b, 0x21, 0x18]);

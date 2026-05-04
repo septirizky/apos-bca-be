@@ -112,9 +112,13 @@ class PrintController {
         });
       }
 
+      const plainMessage = printerService.normalizeReceiptText(
+        logPrint.lp_message || logPrint.lp_message_source || "",
+      );
+
       res.json({
         success: true,
-        lp_message: logPrint.lp_message || "",
+        lp_message: plainMessage,
         lp_message_source: logPrint.lp_message_source || "",
       });
     } catch (err) {
