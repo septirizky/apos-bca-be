@@ -85,8 +85,13 @@ class OrderService {
   async getOrderDetail(o_id, { memberCode, discountId, discountMode } = {}) {
     const order = await Order.findOne({
       where: { o_id },
-      attributes: ["o_id", "is_id", "t_id", "o_start_time", "m_code", "u_id"],
+      attributes: ["o_id", "is_id", "t_id", "ta_id", "o_start_time", "o_pax", "m_code", "u_id"],
       include: [
+        {
+          model: TablesArea,
+          attributes: ["ta_name"],
+          required: false,
+        },
         {
           model: Tables,
           attributes: ["t_name"],
@@ -219,7 +224,10 @@ class OrderService {
       o_id: order?.o_id || null,
       is_id: order?.is_id || null,
       next_is_counter: nextCounter,
+      o_start_time: order?.o_start_time || null,
+      o_pax: parseInt(order?.o_pax || 0, 10) || 0,
       t_name: order?.Table?.t_name || null,
+      ta_name: order?.TablesArea?.ta_name || null,
       u_id: order?.u_id || null,
       u_name: order?.User?.u_name || null,
       m_code: effectiveMemberCode,

@@ -10,6 +10,7 @@ const DownPaymentController = require("../controllers/downPaymentController");
 const VoucherController = require("../controllers/voucherController");
 const PaymentController = require("../controllers/paymentController");
 const LogController = require("../controllers/logController");
+const PrintController = require("../controllers/printController");
 
 /* LOGIN */
 router.post("/login-pin", AuthController.loginPin);
@@ -44,5 +45,12 @@ router.post("/payment", PaymentController.pay);
 
 /* LOG */
 router.post("/logs/pi-mlp", LogController.savePiMlpLog);
+
+/* PRINT */
+router.post("/print/bill-initiation", PrintController.printInitiationBill);
+router.post("/print/epson", PrintController.printEpson);
+router.post("/print/epson/final-bill", PrintController.printFinalBillEpson);
+router.post("/print/epson/test", PrintController.testEpson);
+router.get("/print/final-bill/:is_id", PrintController.getFinalBillContent);
 
 module.exports = router;
