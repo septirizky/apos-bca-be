@@ -67,7 +67,7 @@ class PrintController {
       }
 
       const logPrint = await LogPrint.findOne({
-        where: { is_id },
+        where: { is_id, lp_print_type: "Final" },
         order: [["lp_id", "DESC"]],
       });
 
@@ -101,7 +101,7 @@ class PrintController {
       const { is_id } = req.params;
 
       const logPrint = await LogPrint.findOne({
-        where: { is_id },
+        where: { is_id, lp_print_type: "Final" },
         order: [["lp_id", "DESC"]],
       });
 

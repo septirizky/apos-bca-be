@@ -114,12 +114,34 @@ class PrinterService {
   }
 
   formatPlainChunk(chunk) {
-    const lines = chunk.split("\n");
+    const lines = chunk
+      .split("\n")
+      .filter((line) => !this.isWelcomeLine(line));
     const buffers = [];
+    const normalFont = Buffer.from([0x1b, 0x21, 0x00]);
+    const bigFont = Buffer.from([0x1b, 0x21, 0x18]);
+    const alignLeft = Buffer.from([0x1b, 0x61, 0x00]);
+    const alignCenter = Buffer.from([0x1b, 0x61, 0x01]);
+    const resetLine = Buffer.concat([alignLeft, normalFont]);
 
     lines.forEach((line, index) => {
       if (line) {
-        buffers.push(this.plainLineBuffer(line));
+        if (/^\s*Table /.test(line)) {
+          buffers.push(Buffer.concat([
+            alignCenter,
+            bigFont,
+            this.plainLineBuffer(line),
+            resetLine,
+          ]));
+        } else if (/^Total\s+\d/.test(line)) {
+          buffers.push(Buffer.concat([
+            bigFont,
+            this.plainLineBuffer(line),
+            resetLine,
+          ]));
+        } else {
+          buffers.push(this.plainLineBuffer(line));
+        }
       }
       if (index < lines.length - 1) buffers.push(Buffer.from("\n", "ascii"));
     });
@@ -133,15 +155,56 @@ class PrinterService {
       return Buffer.from(value.padStart(32, " "), "utf8");
     }
 
+    const tableMatch = line.match(/^\s*(Table\s+.+?)\s*$/);
+    if (tableMatch) {
+      return Buffer.from(tableMatch[1], "utf8");
+    }
+
+    const normalizedReceiptLine = this.normalizeReceiptLine(line);
+    if (normalizedReceiptLine !== line) {
+      return Buffer.from(normalizedReceiptLine, "utf8");
+    }
+
     const discountMatch = line.match(/^\s*(\[\d+\]\s+\[[^\]]+\])\s+(-[\d,.]+)\s*$/);
     if (discountMatch) {
       const label = discountMatch[1];
       const value = discountMatch[2];
       const labelStartColumn = 12;
-      const spaces = Math.max(1, 33 - labelStartColumn - label.length - value.length);
+      const spaces = Math.max(1, 35 - labelStartColumn - label.length - value.length);
       return Buffer.from(`\t${label}${" ".repeat(spaces)}${value}`, "utf8");
     }
     return Buffer.from(line, "utf8");
+  }
+
+  normalizeReceiptLine(line) {
+    const pbjtMatch = line.match(/^PBJT\s+(\d+(?:\.\d+)?)%\s+([\d,.]+)\s*$/);
+    if (pbjtMatch) {
+      return this.receiptLine(`PBJT ${pbjtMatch[1]}%`, pbjtMatch[2], 33);
+    }
+
+    const totalMatch = line.match(/^Total\s+([\d,.]+)\s*$/);
+    if (totalMatch) {
+      return this.receiptLine("Total", totalMatch[1], 33);
+    }
+
+    return line;
+  }
+
+  receiptLine(label, value, width) {
+    const left = String(label || "");
+    const right = String(value || "");
+    const spacing = Math.max(1, width - left.length - right.length);
+    return `${left}${" ".repeat(spacing)}${right}`;
+  }
+
+  centerLine(value, width = 33) {
+    const text = String(value || "");
+    const leftPadding = Math.max(0, Math.floor((width - text.length) / 2));
+    return `${" ".repeat(leftPadding)}${text}`;
+  }
+
+  isWelcomeLine(line) {
+    return /^welcome,?$/i.test(String(line || "").trim());
   }
 
   defaultTestContent() {

@@ -43,7 +43,9 @@ class PaymentService {
   }
 
   todayWib() {
-    return Sequelize.literal("DATE(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR))");
+    return Sequelize.literal(
+      "DATE(DATE_ADD(UTC_TIMESTAMP(), INTERVAL 7 HOUR))",
+    );
   }
 
   async getConfigValue(key, fallback = null, transaction = null) {
@@ -66,6 +68,7 @@ class PaymentService {
     voucher_id,
     voucher_amount,
     apos_partner_ref_id,
+    apos_feature_type,
     apos_trace_no,
     apos_approval_code,
     apos_ref_no,
@@ -78,10 +81,9 @@ class PaymentService {
     const transaction = await sequelize.transaction();
 
     try {
-      const branchId = parseInt(
-        await this.getConfigValue("BRANCH_ID", 1, transaction),
-        10,
-      ) || 1;
+      const branchId =
+        parseInt(await this.getConfigValue("BRANCH_ID", 1, transaction), 10) ||
+        1;
       const vatPercent = this.toNumber(
         await this.getConfigValue("VAT", 0, transaction),
       );
@@ -103,7 +105,9 @@ class PaymentService {
           {
             model: Tables,
             attributes: ["t_id", "t_name", "ts_id"],
-            include: [{ model: TablesSection, attributes: ["ts_id", "ts_name"] }],
+            include: [
+              { model: TablesSection, attributes: ["ts_id", "ts_name"] },
+            ],
           },
           { model: TablesArea, attributes: ["ta_id", "ta_name"] },
         ],
@@ -131,7 +135,9 @@ class PaymentService {
               {
                 model: ItemSubcategory,
                 attributes: ["isc_id", "isc_name", "ic_id"],
-                include: [{ model: ItemCategory, attributes: ["ic_id", "ic_name"] }],
+                include: [
+                  { model: ItemCategory, attributes: ["ic_id", "ic_name"] },
+                ],
               },
             ],
           },
@@ -159,10 +165,13 @@ class PaymentService {
         vatPercent,
       );
       const requestedCounter = parseInt(is_counter || 0, 10);
-      const maxCounter = (await ItemSale.max("is_counter", { transaction })) || 0;
+      const maxCounter =
+        (await ItemSale.max("is_counter", { transaction })) || 0;
       const nextCounter = parseInt(maxCounter, 10) + 1;
       const transactionCounter =
-        requestedCounter > parseInt(maxCounter, 10) ? requestedCounter : nextCounter;
+        requestedCounter > parseInt(maxCounter, 10)
+          ? requestedCounter
+          : nextCounter;
 
       const downPayment = dp_id
         ? await DownPayment.findOne({ where: { dp_id }, transaction })
@@ -172,7 +181,10 @@ class PaymentService {
       const voucher = voucher_id
         ? await Voucher.findOne({ where: { v_id: voucher_id }, transaction })
         : voucher_code
-          ? await Voucher.findOne({ where: { v_code: voucher_code }, transaction })
+          ? await Voucher.findOne({
+              where: { v_code: voucher_code },
+              transaction,
+            })
           : null;
 
       if (voucher && voucher.v_status !== "New") {
@@ -192,6 +204,7 @@ class PaymentService {
         voucher_id: voucher?.v_id || null,
         voucher_code: voucher?.v_code || voucher_code || null,
         apos_partner_ref_id: apos_partner_ref_id || null,
+        apos_feature_type: apos_feature_type || null,
       };
 
       await ItemSale.update(
@@ -288,6 +301,7 @@ class PaymentService {
         voucher,
         voucherAmount: voucherAmountValue,
         paymentMethod: payment_method,
+        apos_feature_type,
         apos_trace_no,
         apos_approval_code,
         apos_ref_no,
@@ -370,7 +384,13 @@ class PaymentService {
       ]);
       const settledAt = new Date();
 
-      await this.unlockTable({ order, userId: u_id, posId: pos_id, posIp: pos_ip, transaction });
+      await this.unlockTable({
+        order,
+        userId: u_id,
+        posId: pos_id,
+        posIp: pos_ip,
+        transaction,
+      });
 
       await this.createLogPrint({
         branchId,
@@ -418,7 +438,9 @@ class PaymentService {
       const price = this.toNumber(detail.Item?.i_sell_price || detail.od_price);
       const total = qty * price;
       const cooking = this.toNumber(detail.Item?.i_cooking_charge) * qty;
-      const kind = String(detail.Item?.i_kind || "Other").trim().toLowerCase();
+      const kind = String(detail.Item?.i_kind || "Other")
+        .trim()
+        .toLowerCase();
 
       if (kind === "food") foodTotal += total;
       else if (kind === "beverage") beverageTotal += total;
@@ -444,6 +466,7 @@ class PaymentService {
       vatPercent,
       pbjt,
       total,
+      perItem: discountResult.perItem || {},
     };
   }
 
@@ -456,6 +479,7 @@ class PaymentService {
     voucher,
     voucherAmount,
     paymentMethod,
+    apos_feature_type,
     apos_trace_no,
     apos_approval_code,
     apos_ref_no,
@@ -510,6 +534,8 @@ class PaymentService {
     if (cardAmount > 0 || paymentMethod) {
       const cardMeta = await this.resolveCardPaymentMeta({
         branchId,
+        paymentMethod,
+        featureType: apos_feature_type,
         cardNumber: apos_card_number,
         acquirerType: apos_acquirer_type,
         transaction,
@@ -530,7 +556,7 @@ class PaymentService {
         { transaction },
       );
       paymentLines.push({
-        type: cardMeta.cardTypeName || paymentMethod || "CARD",
+        type: cardMeta.displayName || cardMeta.cardTypeName || "CARD",
         detail: "**** ****",
         amount: cardAmount,
       });
@@ -552,7 +578,9 @@ class PaymentService {
           oh_id: orderHistoryId,
           i_id: detail.i_id || 0,
           ohd_qty: this.toNumber(detail.od_quantity),
-          ohd_price: this.toNumber(detail.Item?.i_sell_price || detail.od_price),
+          ohd_price: this.toNumber(
+            detail.Item?.i_sell_price || detail.od_price,
+          ),
           ohd_entry_time: this.nowWib(),
           ohd_entry: this.zeroMysqlDate(),
           ohd_deletion: this.zeroMysqlDate(),
@@ -616,7 +644,46 @@ class PaymentService {
     };
   }
 
-  async resolveCardPaymentMeta({ branchId, cardNumber, acquirerType, transaction }) {
+  async resolveCardPaymentMeta({
+    branchId,
+    paymentMethod,
+    featureType,
+    cardNumber,
+    acquirerType,
+    transaction,
+  }) {
+    if (this.isQrisPayment(paymentMethod, featureType, acquirerType)) {
+      const qrisCardTypeId = 77;
+      const [branchEdc, cardType] = await Promise.all([
+        BranchEdc.findOne({
+          where: {
+            br_id: branchId,
+            be_name: { [Sequelize.Op.like]: "%BCA%" },
+            [Sequelize.Op.or]: [{ be_status: "Active" }, { be_status: null }],
+          },
+          attributes: ["be_id"],
+          transaction,
+        }),
+        CardType.findOne({
+          where: {
+            ct_id: qrisCardTypeId,
+            ct_status: "Active",
+          },
+          attributes: ["ct_name"],
+          transaction,
+        }),
+      ]);
+
+      const cardTypeName = cardType?.ct_name || "BCA QRIS";
+      return {
+        branchEdcId: branchEdc?.be_id || 0,
+        cardTypeId: qrisCardTypeId,
+        cardTypeName,
+        displayName: cardTypeName,
+        cardNumber: "",
+      };
+    }
+
     const bin = this.extractCardBin(cardNumber);
     const [branchEdc, cardPattern] = await Promise.all([
       BranchEdc.findOne({
@@ -651,12 +718,29 @@ class PaymentService {
       transaction,
     });
 
+    const readableAcquirer = String(acquirerType || "").trim();
+    const genericAcquirer = ["card", "credit", "debit", "qris"].includes(
+      readableAcquirer.toLowerCase(),
+    );
+    const displayName = cardPattern
+      ? cardType?.ct_name || readableAcquirer || "CARD"
+      : !genericAcquirer && readableAcquirer
+        ? readableAcquirer
+        : cardType?.ct_name || "CARD";
+
     return {
       branchEdcId: branchEdc?.be_id || 0,
       cardTypeId,
       cardTypeName: cardType?.ct_name || acquirerType || "",
+      displayName,
       cardNumber: bin,
     };
+  }
+
+  isQrisPayment(...values) {
+    return values.some((value) =>
+      String(value || "").toLowerCase().includes("qris"),
+    );
   }
 
   extractCardBin(cardNumber) {
@@ -801,8 +885,11 @@ class PaymentService {
     paymentLines,
     discounts,
   }) {
+    const filteredReceiptInfo = (receiptInfo || []).filter(
+      (line) => !/^welcome,?$/i.test(String(line || "").trim()),
+    );
     const lines = [
-      ...receiptInfo,
+      ...filteredReceiptInfo,
       "",
       `#${isId} /`,
       "---------------------------------",
@@ -812,8 +899,7 @@ class PaymentService {
       `Cashier     : ${cashierName || "-"}`,
       "---------------------------------",
       `${order.o_pax || 0}  Pax`,
-      `        Table ${tableName}/${areaName}`,
-      "Welcome,",
+      this.centerLine(`Table ${tableName}/${areaName}`),
       "=================================",
     ];
 
@@ -827,38 +913,56 @@ class PaymentService {
           8,
         )}       =${this.padLeft(this.formatMoney(qty * price), 9)}`,
       );
+
+      const itemDiscounts = calculated.perItem[detail.od_id]?.discounts || [];
+      itemDiscounts
+        .filter((discount) => discount.is_applied !== false)
+        .forEach((discount) => {
+          const percent = this.formatPercent(
+            discount.dd_value ?? discount.discount_percent,
+          );
+          lines.push(this.discountLine(percent, discount.discount_amount));
+        });
     });
 
-    lines.push("                       ----------");
+    lines.push("__RIGHT__----------");
     if (calculated.foodTotal > 0) {
-      lines.push(`Food Total              ${this.padLeft(this.formatMoney(calculated.foodTotal), 9)}`);
+      lines.push(this.receiptLine("Food Total", calculated.foodTotal));
     }
     if (calculated.beverageTotal > 0) {
-      lines.push(`Beverage Total          ${this.padLeft(this.formatMoney(calculated.beverageTotal), 9)}`);
+      lines.push(this.receiptLine("Beverage Total", calculated.beverageTotal));
     }
     if (calculated.otherTotal > 0) {
-      lines.push(`Other Total             ${this.padLeft(this.formatMoney(calculated.otherTotal), 9)}`);
+      lines.push(this.receiptLine("Other Total", calculated.otherTotal));
     }
     lines.push("");
-    lines.push(`Total Bef. Disc.        ${this.padLeft(this.formatMoney(calculated.totalBeforeDiscount), 9)}`);
-    lines.push(`Total Discount          ${this.padLeft(this.formatMoney(calculated.discountTotal), 9)}`);
-    lines.push(`Subtotal                ${this.padLeft(this.formatMoney(calculated.subtotal), 9)}`);
-    lines.push(`Cooking Charge          ${this.padLeft(this.formatMoney(calculated.cookingCharge), 9)}`);
     lines.push(
-      `PBJT      ${this.toNumber(calculated.vatPercent).toFixed(2)}%          ${this.padLeft(
-        this.formatMoney(calculated.pbjt),
-        9,
-      )}`,
+      this.receiptLine("Total Bef. Disc.", calculated.totalBeforeDiscount),
+    );
+    lines.push(this.receiptLine("Total Discount", calculated.discountTotal));
+    lines.push(this.receiptLine("Subtotal", calculated.subtotal));
+    if (calculated.cookingCharge > 0) {
+      lines.push(this.receiptLine("Cooking Charge", calculated.cookingCharge));
+    }
+    lines.push(
+      this.receiptLine(
+        `PBJT ${this.toNumber(calculated.vatPercent).toFixed(2)}%`,
+        calculated.pbjt,
+        "",
+        33,
+      ),
     );
     lines.push("");
-    lines.push(`Total      ${this.formatMoney(calculated.total)}`);
+    lines.push(this.finalTotalLine(calculated.total));
     lines.push("");
     lines.push("FINAL BILL / TAGIHAN AKHIR");
     lines.push("----------- PAYMENT -------------");
 
     (paymentLines || []).forEach((payment) => {
       lines.push(payment.type);
-      lines.push(`${payment.detail || ""}${this.padLeft(this.formatMoney(payment.amount), 30 - String(payment.detail || "").length)}`);
+      lines.push(
+        `${payment.detail || ""}${this.padLeft(this.formatMoney(payment.amount), 30 - String(payment.detail || "").length)}`,
+      );
     });
 
     if ((discounts || []).length) {
@@ -881,14 +985,24 @@ class PaymentService {
     const lines = message.split("\n");
     const firstFour = lines.slice(0, 4);
     const rest = lines.slice(4);
-    return `{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1033{\\fonttbl{\\f0\\fnil FontB22;}{\\f1\\fnil FontA11;}{\\f2\\fnil Consolas;}}\n\\viewkind4\\uc1\\pard\\f0\\fs18 ${this.escapeRtf(
+    return `{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1033{\\fonttbl{\\f0\\fnil FontA11;}{\\f1\\fnil FontB22;}{\\f2\\fnil Consolas;}}\n\\viewkind4\\uc1\\pard\\f1\\fs18 ${this.escapeRtf(
       firstFour[0] || "",
-    )}\\par\n\\f1 ${firstFour
+    )}\\par\n\\f0 ${firstFour
       .slice(1)
       .map((line) => `${this.escapeRtf(line)}\\par`)
-      .join("\n")}\n\\par\n=================================\\par\nDUPLICATE BILL #[DUPCOUNT]\\par\n[DUPMSG1]\\par\n[DUPMSG2]\\par\n=================================\\par\n\\par\n${rest
-      .map((line) => `${this.escapeRtf(line)}\\par`)
+      .join(
+        "\n",
+      )}\n\\par\n=================================\\par\nDUPLICATE BILL #[DUPCOUNT]\\par\n[DUPMSG1]\\par\n[DUPMSG2]\\par\n=================================\\par\n\\par\n${rest
+      .map((line) => `${this.rtfPrintLine(line)}\\par`)
       .join("\n")}\n\\f2\\fs20\\par\n}`;
+  }
+
+  rtfPrintLine(line) {
+    const escaped = this.escapeRtf(line);
+    if (/^\s*Table /.test(line) || /^Total\s+\d/.test(line)) {
+      return `\\f1 ${escaped}\\f0`;
+    }
+    return escaped;
   }
 
   escapeRtf(value) {
@@ -914,20 +1028,25 @@ class PaymentService {
     if (!value) return "";
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) return "";
-    return [
-      date.getFullYear(),
-      String(date.getMonth() + 1).padStart(2, "0"),
-      String(date.getDate()).padStart(2, "0"),
-    ].join("-") + ` ${[
-      String(date.getHours()).padStart(2, "0"),
-      String(date.getMinutes()).padStart(2, "0"),
-      String(date.getSeconds()).padStart(2, "0"),
-    ].join(":")}`;
+    return (
+      [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, "0"),
+        String(date.getDate()).padStart(2, "0"),
+      ].join("-") +
+      ` ${[
+        String(date.getHours()).padStart(2, "0"),
+        String(date.getMinutes()).padStart(2, "0"),
+        String(date.getSeconds()).padStart(2, "0"),
+      ].join(":")}`
+    );
   }
 
   formatQty(value) {
     const qty = this.toNumber(value);
-    return Number.isInteger(qty) ? String(qty) : qty.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+    return Number.isInteger(qty)
+      ? String(qty)
+      : qty.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
   }
 
   padLeft(value, width) {
@@ -936,6 +1055,37 @@ class PaymentService {
 
   formatMoney(value) {
     return Math.round(this.toNumber(value)).toLocaleString("en-US");
+  }
+
+  receiptLine(label, amount, separator = "", width = 32) {
+    const value = `${separator}${separator ? " " : ""}${this.formatMoney(amount)}`;
+    const left = String(label || "");
+    const spacing = Math.max(1, width - left.length - value.length);
+    return `${left}${" ".repeat(spacing)}${value}`;
+  }
+
+  centerLine(value, width = 33) {
+    const text = String(value || "");
+    const leftPadding = Math.max(0, Math.floor((width - text.length) / 2));
+    return `${" ".repeat(leftPadding)}${text}`;
+  }
+
+  finalTotalLine(amount) {
+    return this.receiptLine("Total", amount, "", 33);
+  }
+
+  formatPercent(value) {
+    const number = this.toNumber(value);
+    return Number.isInteger(number)
+      ? `${number}.0`
+      : number.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+  }
+
+  discountLine(percent, amount) {
+    const value = `-${this.formatMoney(amount)}`;
+    const label = `[1] [${percent}%]`;
+    const spacing = Math.max(1, 35 - 12 - label.length - value.length);
+    return `${" ".repeat(12)}${label}${" ".repeat(spacing)}${value}`;
   }
 }
 
