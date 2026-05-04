@@ -165,7 +165,7 @@ class PrinterService {
   plainLineBuffer(line) {
     if (line.startsWith("__RIGHT__")) {
       const value = line.replace("__RIGHT__", "");
-      return Buffer.from(value.padStart(32, " "), "utf8");
+      return Buffer.from(value.padStart(33, " "), "utf8");
     }
 
     const tableMatch = line.match(/^\s*(Table\s+.+?)\s*$/);
@@ -200,12 +200,24 @@ class PrinterService {
       return this.receiptLine("Total", totalMatch[1], 33);
     }
 
+    const summaryMatch = line.match(
+      /^(Food Total|Beverage Total|Other Total|Total Bef\. Disc\.|Total Discount|Subtotal|Cooking Charge)\s+(-?[\d,.]+)\s*$/,
+    );
+    if (summaryMatch) {
+      return this.receiptLine(summaryMatch[1], summaryMatch[2], 33);
+    }
+
+    const itemMatch = line.match(/^(\s*\S+\s+x\s+[\d,.]+)\s+=\s*([\d,.]+)\s*$/);
+    if (itemMatch) {
+      return this.receiptLine(itemMatch[1], itemMatch[2], 33, "=");
+    }
+
     return line;
   }
 
-  receiptLine(label, value, width) {
+  receiptLine(label, value, width, separator = "") {
     const left = String(label || "");
-    const right = String(value || "");
+    const right = `${separator}${separator ? " " : ""}${value || ""}`;
     const spacing = Math.max(1, width - left.length - right.length);
     return `${left}${" ".repeat(spacing)}${right}`;
   }

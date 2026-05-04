@@ -280,6 +280,7 @@ class BillPrintService {
           `${this.padLeft(this.formatQty(qty), 2)}    x ${this.padLeft(this.formatMoney(price), 8)}`,
           itemTotal,
           "=",
+          33,
         ),
       );
 
@@ -495,10 +496,10 @@ class BillPrintService {
     return String(value || "").padStart(size, " ");
   }
 
-  receiptLine(label, amount, separator = "") {
+  receiptLine(label, amount, separator = "", width = PRINT_WIDTH) {
     const value = `${separator}${separator ? " " : ""}${this.formatMoney(amount)}`;
     const left = String(label || "");
-    const spacing = Math.max(1, PRINT_WIDTH - left.length - value.length);
+    const spacing = Math.max(1, width - left.length - value.length);
     return `${left}${" ".repeat(spacing)}${value}`;
   }
 

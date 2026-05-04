@@ -1057,7 +1057,7 @@ class PaymentService {
     return Math.round(this.toNumber(value)).toLocaleString("en-US");
   }
 
-  receiptLine(label, amount, separator = "", width = 32) {
+  receiptLine(label, amount, separator = "", width = 33) {
     const value = `${separator}${separator ? " " : ""}${this.formatMoney(amount)}`;
     const left = String(label || "");
     const spacing = Math.max(1, width - left.length - value.length);
