@@ -19,7 +19,8 @@ const discountEngineService = require("./discountEngineService");
 const printerService = require("./printerService");
 
 const ZERO_MYSQL_DATE = "0000-00-00 00:00:00";
-const PRINT_WIDTH = 32;
+const PRINT_WIDTH = 33;
+const BIG_PRINT_WIDTH = 33;
 
 class BillPrintService {
   async printInitiationBill({
@@ -254,18 +255,20 @@ class BillPrintService {
   }) {
     const lines = [
       "TAGIHAN SEMENTARA",
-      "Harap menunggu Final Bill untuk",
-      "penyelesaian pembayaran.",
+      "",
+      "Harap menunggu Final Bill untuk penyelesaian pembayaran.",
 
       memberLabel || "",
-      `---------------------- Print # ${printCount}`,
+      printCount > 1
+        ? `----------------------- Print # ${printCount}`
+        : "---------------------------------",
       `Initiated   : ${this.formatDateTime(order.o_start_time)}`,
-      `Settled     : ${settledAt}`,
+      "Settled     : NOT SETTLED",
       `Waiter      : ${waiterName || "-"}`,
-      `Cashier     : ${cashierName || "-"}`,
+      `Print by    : ${cashierName || "-"}`,
       "---------------------------------",
       `${order.o_pax || 0}  Pax`,
-      `Table ${tableName}/${areaName}`,
+      this.centerLine(this.tableLine(tableName, areaName)),
       "=================================",
     ];
 
@@ -275,14 +278,7 @@ class BillPrintService {
       const itemTotal = qty * price;
       const itemName = detail.od_name || detail.Item?.i_name || "";
       lines.push(itemName);
-      lines.push(
-        this.receiptLine(
-          `${this.padLeft(this.formatQty(qty), 2)}    x ${this.padLeft(this.formatMoney(price), 8)}`,
-          itemTotal,
-          "=",
-          33,
-        ),
-      );
+      lines.push(this.itemLine(qty, price, itemTotal));
 
       const discounts = calculated.perItem[detail.od_id]?.discounts || [];
       discounts
@@ -295,7 +291,7 @@ class BillPrintService {
         });
     });
 
-    lines.push("__RIGHT__----------");
+    lines.push(this.rightLine("----------"));
     if (calculated.foodTotal > 0)
       lines.push(this.receiptLine("Food Total", calculated.foodTotal));
     if (calculated.beverageTotal > 0)
@@ -303,10 +299,10 @@ class BillPrintService {
     if (calculated.otherTotal > 0)
       lines.push(this.receiptLine("Other Total", calculated.otherTotal));
     lines.push("");
-    lines.push(
-      this.receiptLine("Total Bef. Disc.", calculated.totalBeforeDiscount),
-    );
-    lines.push(this.receiptLine("Total Discount", calculated.discountTotal));
+    if (calculated.discountTotal > 0) {
+      lines.push(this.receiptLine("Total Bef. Disc.", calculated.totalBeforeDiscount));
+      lines.push(this.receiptLine("Total Discount", calculated.discountTotal));
+    }
     lines.push(this.receiptLine("Subtotal", calculated.subtotal));
     if (calculated.cookingCharge > 0)
       lines.push(this.receiptLine("Cooking Charge", calculated.cookingCharge));
@@ -317,27 +313,53 @@ class BillPrintService {
       ),
     );
     lines.push("");
-    lines.push(this.receiptLine("Total", calculated.total));
+    lines.push(
+      this.receiptLine("Total", calculated.total, "", BIG_PRINT_WIDTH),
+    );
+    lines.push("");
     lines.push("TEMP BILL / TAGIHAN SEMENTARA");
+    lines.push("");
     lines.push("Harap periksa kembali tagihan");
     lines.push("anda sebelum anda membayar");
+    lines.push("");
 
     return lines.join("\n");
   }
 
   toInitiationRtf(message) {
-    return `{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1033{\\fonttbl{\\f0\\fnil FontA11;}{\\f1\\fnil FontB22;}{\\f2\\fnil Consolas;}}\n\\viewkind4\\uc1\\pard\\f0\\fs18 ${message
-      .split("\n")
-      .map((line) => `${this.rtfLine(line)}\\par`)
-      .join("")}\\f2\\fs22\\par\n}`;
+    let currentFont = "";
+    const rtfLines = message.split("\n").map((line) => {
+      const desiredFont = this.isBigRtfLine(line) ? "big" : "normal";
+      let value = line;
+      if (/^\s*Table /.test(line))
+        value = this.centerLine(line.trim(), PRINT_WIDTH);
+
+      const escaped = this.escapeRtfLine(value);
+      let prefix = "";
+      if (desiredFont !== currentFont) {
+        currentFont = desiredFont;
+        const control = desiredFont === "big" ? "\\f0\\fs28" : "\\f1\\fs24";
+        prefix = `${control}${escaped ? " " : ""}`;
+      }
+      return `${prefix}${escaped}\\par`;
+    });
+
+    return `{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1033{\\fonttbl{\\f0\\fnil FontB22;}{\\f1\\fnil FontA11;}{\\f2\\fnil Consolas;}}\n\\viewkind4\\uc1\\pard${rtfLines.join("\n")}\n\\f2\\fs22\\par\n}`;
   }
 
-  rtfLine(line) {
-    let escaped = this.escapeRtf(line);
-    if (/^Table /.test(line) || /^Total\s{2,}/.test(line)) {
-      escaped = `\\f1 ${escaped}\\f0`;
-    }
-    return escaped;
+  isBigRtfLine(line) {
+    return (
+      /^TAGIHAN SEMENTARA$/.test(line) ||
+      /^\s*Table /.test(line) ||
+      /^Total\s{2,}/.test(line)
+    );
+  }
+
+  escapeRtfLine(line) {
+    const printable = line.startsWith("__RIGHT__")
+      ? line.replace("__RIGHT__", "").padStart(PRINT_WIDTH, " ")
+      : line;
+    return this.escapeRtf(printable);
   }
 
   async createHistory({
@@ -503,6 +525,29 @@ class BillPrintService {
     return `${left}${" ".repeat(spacing)}${value}`;
   }
 
+  itemLine(qty, price, total) {
+    const left = `${this.padLeft(this.formatQty(qty), 2)}    x ${this.padLeft(this.formatMoney(price), 8)}`;
+    const value = this.padLeft(this.formatMoney(total), 8);
+    const right = `= ${value}`;
+    const spacing = Math.max(1, PRINT_WIDTH - left.length - right.length);
+    return `${left}${" ".repeat(spacing)}${right}`;
+  }
+
+  tableLine(tableName, areaName) {
+    const area = String(areaName || "").trim();
+    return area ? `Table ${tableName}/${area}` : `Table ${tableName}`;
+  }
+
+  centerLine(value, width = PRINT_WIDTH) {
+    const text = String(value || "");
+    const leftPadding = Math.max(0, Math.ceil((width - text.length) / 2));
+    return `${" ".repeat(leftPadding)}${text}`;
+  }
+
+  rightLine(value, width = PRINT_WIDTH) {
+    return String(value || "").padStart(width, " ");
+  }
+
   discountLine(percent, amount) {
     const value = `-${this.formatMoney(amount)}`;
     return `[1] [${percent}%] ${value}`.padStart(PRINT_WIDTH, " ");
@@ -510,18 +555,25 @@ class BillPrintService {
 
   formatDateTime(value) {
     if (!value) return "";
+    if (typeof value === "string") {
+      const match = value.match(
+        /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/,
+      );
+      if (match)
+        return `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}:${match[6]}`;
+    }
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) return "";
     return (
       [
-        date.getFullYear(),
-        String(date.getMonth() + 1).padStart(2, "0"),
-        String(date.getDate()).padStart(2, "0"),
+        date.getUTCFullYear(),
+        String(date.getUTCMonth() + 1).padStart(2, "0"),
+        String(date.getUTCDate()).padStart(2, "0"),
       ].join("-") +
       ` ${[
-        String(date.getHours()).padStart(2, "0"),
-        String(date.getMinutes()).padStart(2, "0"),
-        String(date.getSeconds()).padStart(2, "0"),
+        String(date.getUTCHours()).padStart(2, "0"),
+        String(date.getUTCMinutes()).padStart(2, "0"),
+        String(date.getUTCSeconds()).padStart(2, "0"),
       ].join(":")}`
     );
   }

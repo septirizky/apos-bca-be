@@ -739,7 +739,9 @@ class PaymentService {
 
   isQrisPayment(...values) {
     return values.some((value) =>
-      String(value || "").toLowerCase().includes("qris"),
+      String(value || "")
+        .toLowerCase()
+        .includes("qris"),
     );
   }
 
@@ -985,7 +987,7 @@ class PaymentService {
     const lines = message.split("\n");
     const firstFour = lines.slice(0, 4);
     const rest = lines.slice(4);
-    return `{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1033{\\fonttbl{\\f0\\fnil FontA11;}{\\f1\\fnil FontB22;}{\\f2\\fnil Consolas;}}\n\\viewkind4\\uc1\\pard\\f1\\fs18 ${this.escapeRtf(
+    return `{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1033{\\fonttbl{\\f0\\fnil FontB22;}{\\f1\\fnil FontA11;}{\\f2\\fnil Consolas;}}\n\\viewkind4\\uc1\\pard\\f1\\fs18 ${this.escapeRtf(
       firstFour[0] || "",
     )}\\par\n\\f0 ${firstFour
       .slice(1)

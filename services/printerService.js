@@ -23,7 +23,9 @@ class PrinterService {
 
       socket.setTimeout(5000);
       socket.once("error", finish);
-      socket.once("timeout", () => finish(new Error("Koneksi printer timeout")));
+      socket.once("timeout", () =>
+        finish(new Error("Koneksi printer timeout")),
+      );
 
       socket.connect(port, printerIp, () => {
         socket.write(payload, (err) => {
@@ -42,15 +44,17 @@ class PrinterService {
   buildEpsonPayload(content) {
     const text = this.normalizePrintText(content || this.defaultTestContent());
     const initializePrinter = Buffer.from([0x1b, 0x40]);
-    const defaultLineSpacing = Buffer.from([0x1b, 0x32]);
+    const compactLineSpacing = Buffer.from([0x1b, 0x33, 0x12]);
     const tabStops = Buffer.from([0x1b, 0x44, 0x0c, 0x1e, 0x00]);
-    const feedAfterPrint = Buffer.from([0x1b, 0x64, 0x0a]);
+    const feedAfterPrint = Buffer.from([0x1b, 0x64, 0x01]);
+    const partialCut = Buffer.from([0x1d, 0x56, 0x42, 0x00]);
     return Buffer.concat([
       initializePrinter,
-      defaultLineSpacing,
+      compactLineSpacing,
       tabStops,
       this.formattedTextBuffer(text),
       feedAfterPrint,
+      partialCut,
     ]);
   }
 
@@ -58,15 +62,33 @@ class PrinterService {
     if (!content) return "";
     if (!content.trim().startsWith("{\\rtf")) return content;
 
-    return content
+    const markBigFont = (value) => {
+      const marker = String(value).trim().startsWith("Table ")
+        ? "\u0003"
+        : "\u0001";
+      return `${marker}${value}\u0002`;
+    };
+
+    const preparedContent = /{\\f0\\fnil FontB22;}/.test(content)
+      ? content
+          .replace(/\\f0(?:\\fs\d+)? ?([^\\{}]*?)\\par/g, (_, value) => {
+            return `${markBigFont(value)}\\par`;
+          })
+          .replace(
+            /\\f0(?:\\fs\d+)? ?([^\\{}]*?)\\f1(?:\\fs\d+)?/g,
+            (_, value) => {
+              return markBigFont(value);
+            },
+          )
+      : content.replace(/\\f1 ?([^\\{}]*?)\\f0/g, (_, value) => {
+          return markBigFont(value);
+        });
+
+    return preparedContent
       .replace(/\r\n/g, "\n")
       .replace(/{\\fonttbl(?:{[^{}]*}|[^{}])*}/g, "")
       .replace(/^{\\rtf1\\ansi\\ansicpg\d+\\deff\d+\\deflang\d+/g, "")
       .replace(/\\viewkind\d+\\uc\d+\\pard/g, "")
-      .replace(/\\f1 ?([^\\{}]*?)\\f0/g, (_, value) => {
-        const marker = String(value).trim().startsWith("Table ") ? "\u0003" : "\u0001";
-        return `${marker}${value}\u0002`;
-      })
       .replace(/\\par[d]?[ \t]*(\r?\n)?/g, "\n")
       .replace(/\\'[0-9a-fA-F]{2}/g, "")
       .replace(/\\[a-zA-Z]+-?\d* ?/g, "")
@@ -96,6 +118,7 @@ class PrinterService {
     const bigFont = Buffer.from([0x1b, 0x21, 0x18]);
     const alignLeft = Buffer.from([0x1b, 0x61, 0x00]);
     const alignCenter = Buffer.from([0x1b, 0x61, 0x01]);
+    const alignRight = Buffer.from([0x1b, 0x61, 0x02]);
     const resetLine = Buffer.concat([alignLeft, normalFont]);
     const chunks = [resetLine];
     let current = "";
@@ -110,7 +133,8 @@ class PrinterService {
       if (char === "\u0001" || char === "\u0002" || char === "\u0003") {
         flushCurrent();
         if (char === "\u0001") chunks.push(bigFont);
-        else if (char === "\u0003") chunks.push(Buffer.concat([alignCenter, bigFont]));
+        else if (char === "\u0003")
+          chunks.push(Buffer.concat([alignRight, bigFont]));
         else chunks.push(resetLine);
       } else if (char === "\n") {
         current += char;
@@ -127,31 +151,34 @@ class PrinterService {
   }
 
   formatPlainChunk(chunk) {
-    const lines = chunk
-      .split("\n")
-      .filter((line) => !this.isWelcomeLine(line));
+    const lines = chunk.split("\n").filter((line) => !this.isWelcomeLine(line));
     const buffers = [];
     const normalFont = Buffer.from([0x1b, 0x21, 0x00]);
     const bigFont = Buffer.from([0x1b, 0x21, 0x18]);
     const alignLeft = Buffer.from([0x1b, 0x61, 0x00]);
     const alignCenter = Buffer.from([0x1b, 0x61, 0x01]);
+    const alignRight = Buffer.from([0x1b, 0x61, 0x02]);
     const resetLine = Buffer.concat([alignLeft, normalFont]);
 
     lines.forEach((line, index) => {
       if (line) {
         if (/^\s*Table /.test(line)) {
-          buffers.push(Buffer.concat([
-            alignCenter,
-            bigFont,
-            this.plainLineBuffer(line),
-            resetLine,
-          ]));
+          buffers.push(
+            Buffer.concat([
+              alignRight,
+              bigFont,
+              this.plainLineBuffer(line),
+              resetLine,
+            ]),
+          );
+        } else if (/^\s*TAGIHAN SEMENTARA\s*$/.test(line)) {
+          buffers.push(
+            Buffer.concat([bigFont, this.plainLineBuffer(line), resetLine]),
+          );
         } else if (/^Total\s+\d/.test(line)) {
-          buffers.push(Buffer.concat([
-            bigFont,
-            this.plainLineBuffer(line),
-            resetLine,
-          ]));
+          buffers.push(
+            Buffer.concat([bigFont, this.plainLineBuffer(line), resetLine]),
+          );
         } else {
           buffers.push(this.plainLineBuffer(line));
         }
@@ -178,12 +205,17 @@ class PrinterService {
       return Buffer.from(normalizedReceiptLine, "utf8");
     }
 
-    const discountMatch = line.match(/^\s*(\[\d+\]\s+\[[^\]]+\])\s+(-[\d,.]+)\s*$/);
+    const discountMatch = line.match(
+      /^\s*(\[\d+\]\s+\[[^\]]+\])\s+(-[\d,.]+)\s*$/,
+    );
     if (discountMatch) {
       const label = discountMatch[1];
       const value = discountMatch[2];
       const labelStartColumn = 12;
-      const spaces = Math.max(1, 35 - labelStartColumn - label.length - value.length);
+      const spaces = Math.max(
+        1,
+        35 - labelStartColumn - label.length - value.length,
+      );
       return Buffer.from(`\t${label}${" ".repeat(spaces)}${value}`, "utf8");
     }
     return Buffer.from(line, "utf8");
