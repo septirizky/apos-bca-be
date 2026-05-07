@@ -22,6 +22,7 @@ const Member = require("./Member")(sequelize, Sequelize);
 const Discount = require("./Discount")(sequelize, Sequelize);
 const DiscountDetail = require("./DiscountDetail")(sequelize, Sequelize);
 const Config = require("./Config")(sequelize, Sequelize);
+const ClientConfig = require("./ClientConfig")(sequelize, Sequelize);
 
 const ItemSale = require("./ItemSale")(sequelize, Sequelize);
 const ItemSaleDetail = require("./ItemSaleDetail")(sequelize, Sequelize);
@@ -174,6 +175,7 @@ module.exports = {
   DiscountDetail,
 
   Config,
+  ClientConfig,
 
   ItemSale,
   ItemSaleDetail,

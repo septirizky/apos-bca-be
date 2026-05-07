@@ -23,7 +23,7 @@ class ConfigService {
   async getBranchName() {
     const config = await Config.findOne({
       where: {
-        c_key: "BRANCH_NAME",
+        c_key: "NAME",
       },
     });
 

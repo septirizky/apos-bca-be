@@ -2,6 +2,7 @@ const {
   sequelize,
   Sequelize,
   Config,
+  ClientConfig,
   Order,
   OrderDetail,
   OrderDetailOption,
@@ -25,6 +26,7 @@ const {
   CardType,
   CardTypePattern,
   BranchEdc,
+  Options,
   User,
 } = require("../models");
 const discountEngineService = require("./discountEngineService");
@@ -144,6 +146,13 @@ class PaymentService {
           {
             model: OrderDetailOption,
             attributes: ["odo_id", "o_id", "od_id", "op_id"],
+            include: [
+              {
+                model: Options,
+                attributes: ["op_id", "op_name", "op_price_mod"],
+                required: false,
+              },
+            ],
           },
         ],
         transaction,
@@ -391,6 +400,7 @@ class PaymentService {
         posIp: pos_ip,
         transaction,
       });
+      const showAllOption = await this.shouldShowAllOption(transaction);
 
       await this.createLogPrint({
         branchId,
@@ -398,6 +408,7 @@ class PaymentService {
         details: orderDetails,
         calculated,
         isId: is_id,
+        isCounter: is_counter,
         userId: u_id,
         posId: pos_id,
         posIp: pos_ip,
@@ -407,6 +418,7 @@ class PaymentService {
         paymentLines,
         discounts: discountResult.discounts || [],
         receiptInfo: await this.getReceiptInfo(transaction),
+        showAllOption,
         transaction,
       });
 
@@ -789,19 +801,41 @@ class PaymentService {
 
   async getReceiptInfo(transaction) {
     const configs = await Config.findAll({
-      where: { c_key: ["BRANCH_NAME", "INFO1", "INFO2", "INFO3"] },
+      where: { c_key: ["NAME", "INFO1", "INFO2", "INFO3"] },
       transaction,
     });
     const infoMap = configs.reduce((acc, config) => {
       acc[config.c_key] = config.c_value;
       return acc;
     }, {});
-    return [
-      infoMap.BRANCH_NAME,
-      infoMap.INFO1,
-      infoMap.INFO2,
-      infoMap.INFO3,
-    ].filter(Boolean);
+    return [infoMap.NAME, infoMap.INFO1, infoMap.INFO2, infoMap.INFO3]
+      .filter(Boolean)
+      .flatMap((line) => this.wrapReceiptInfoLine(line));
+  }
+
+  wrapReceiptInfoLine(line, width = 33) {
+    const text = String(line || "").trim();
+    if (text.length <= width) return [text];
+
+    const lines = [];
+    let remaining = text;
+    while (remaining.length > width) {
+      const splitAt = remaining.lastIndexOf(" ", width);
+      if (splitAt <= 0) break;
+      lines.push(remaining.slice(0, splitAt).trimEnd());
+      remaining = remaining.slice(splitAt + 1).trimStart();
+    }
+    if (remaining) lines.push(remaining);
+    return lines.length ? lines : [text];
+  }
+
+  async shouldShowAllOption(transaction) {
+    const config = await ClientConfig.findOne({
+      where: { c_key: "PAYMENT_SHOW_ALL_OPTION" },
+      attributes: ["c_value"],
+      transaction,
+    });
+    return String(config?.c_value ?? "0") === "1";
   }
 
   async createLogPrint({
@@ -810,6 +844,7 @@ class PaymentService {
     details,
     calculated,
     isId,
+    isCounter,
     userId,
     posId,
     posIp,
@@ -819,6 +854,7 @@ class PaymentService {
     paymentLines,
     discounts,
     receiptInfo,
+    showAllOption,
     transaction,
   }) {
     const tableName = order.Table?.t_name || order.t_id;
@@ -826,6 +862,7 @@ class PaymentService {
     const plainMessage = this.buildPrintMessage({
       receiptInfo,
       isId,
+      isCounter,
       tableName,
       areaName,
       order,
@@ -836,6 +873,7 @@ class PaymentService {
       settledAt,
       paymentLines,
       discounts,
+      showAllOption,
     });
     const sourceMessage = this.toRtfSource(plainMessage);
 
@@ -876,6 +914,7 @@ class PaymentService {
   buildPrintMessage({
     receiptInfo,
     isId,
+    isCounter,
     tableName,
     areaName,
     order,
@@ -886,6 +925,7 @@ class PaymentService {
     settledAt,
     paymentLines,
     discounts,
+    showAllOption,
   }) {
     const filteredReceiptInfo = (receiptInfo || []).filter(
       (line) => !/^welcome,?$/i.test(String(line || "").trim()),
@@ -893,7 +933,7 @@ class PaymentService {
     const lines = [
       ...filteredReceiptInfo,
       "",
-      `#${isId} /`,
+      `#${isCounter || isId} /`,
       "---------------------------------",
       `Initiated   : ${this.formatDateTime(order.o_start_time)}`,
       `Settled     : ${this.formatDateTime(settledAt)}`,
@@ -901,7 +941,8 @@ class PaymentService {
       `Cashier     : ${cashierName || "-"}`,
       "---------------------------------",
       `${order.o_pax || 0}  Pax`,
-      this.centerLine(`Table ${tableName}/${areaName}`),
+      this.centerLine(this.tableLine(tableName, areaName)),
+      "Welcome, ",
       "=================================",
     ];
 
@@ -916,6 +957,12 @@ class PaymentService {
         )}       =${this.padLeft(this.formatMoney(qty * price), 9)}`,
       );
 
+      if (showAllOption) {
+        (detail.OrderDetailOptions || []).forEach((option) => {
+          lines.push(this.optionLine(option));
+        });
+      }
+
       const itemDiscounts = calculated.perItem[detail.od_id]?.discounts || [];
       itemDiscounts
         .filter((discount) => discount.is_applied !== false)
@@ -927,7 +974,7 @@ class PaymentService {
         });
     });
 
-    lines.push("__RIGHT__----------");
+    lines.push(this.rightLine("----------"));
     if (calculated.foodTotal > 0) {
       lines.push(this.receiptLine("Food Total", calculated.foodTotal));
     }
@@ -938,17 +985,19 @@ class PaymentService {
       lines.push(this.receiptLine("Other Total", calculated.otherTotal));
     }
     lines.push("");
-    lines.push(
-      this.receiptLine("Total Bef. Disc.", calculated.totalBeforeDiscount),
-    );
-    lines.push(this.receiptLine("Total Discount", calculated.discountTotal));
+    if (calculated.discountTotal > 0) {
+      lines.push(
+        this.receiptLine("Total Bef. Disc.", calculated.totalBeforeDiscount),
+      );
+      lines.push(this.receiptLine("Total Discount", calculated.discountTotal));
+    }
     lines.push(this.receiptLine("Subtotal", calculated.subtotal));
     if (calculated.cookingCharge > 0) {
       lines.push(this.receiptLine("Cooking Charge", calculated.cookingCharge));
     }
     lines.push(
       this.receiptLine(
-        `PBJT ${this.toNumber(calculated.vatPercent).toFixed(2)}%`,
+        `PBJT      ${this.toNumber(calculated.vatPercent).toFixed(2)}%`,
         calculated.pbjt,
         "",
         33,
@@ -961,50 +1010,81 @@ class PaymentService {
     lines.push("----------- PAYMENT -------------");
 
     (paymentLines || []).forEach((payment) => {
-      lines.push(payment.type);
-      lines.push(
-        `${payment.detail || ""}${this.padLeft(this.formatMoney(payment.amount), 30 - String(payment.detail || "").length)}`,
-      );
+      if (payment.detail) {
+        lines.push(payment.type);
+        lines.push(
+          `${payment.detail}${this.padLeft(this.formatMoney(payment.amount), 30 - String(payment.detail).length)}`,
+        );
+      } else {
+        lines.push(this.receiptLine(payment.type, payment.amount));
+      }
     });
 
     if ((discounts || []).length) {
       lines.push("");
       discounts.forEach((discount) => {
-        lines.push(discount.d_name || "");
+        if (discount.d_name) lines.push(discount.d_name);
       });
     }
 
+    lines.push("");
     lines.push("Terima kasih atas kunjungan anda");
     lines.push("");
-    lines.push("=====Download Aplikasi BD+ ==== ");
-    lines.push("Cashback poin 5% dari transaksi, ");
-    lines.push("mudah reservasi, dan banyak rewards");
+    lines.push("=====Download Aplikasi BD+ ====");
+    lines.push("Cashback poin 5% dari transaksi,");
+    lines.push("mudah reservasi, dan banyak");
+    lines.push("rewards");
 
     return lines.join("\n");
   }
 
-  toRtfSource(message) {
+  toRtfSource(
+    message,
+    {
+      includeDuplicate = false,
+      duplicateCount = 0,
+      printBy = "",
+      printAt = "",
+    } = {},
+  ) {
     const lines = message.split("\n");
-    const firstFour = lines.slice(0, 4);
-    const rest = lines.slice(4);
-    return `{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1033{\\fonttbl{\\f0\\fnil FontB22;}{\\f1\\fnil FontA11;}{\\f2\\fnil Consolas;}}\n\\viewkind4\\uc1\\pard\\f1\\fs18 ${this.escapeRtf(
-      firstFour[0] || "",
-    )}\\par\n\\f0 ${firstFour
-      .slice(1)
-      .map((line) => `${this.escapeRtf(line)}\\par`)
-      .join(
-        "\n",
-      )}\n\\par\n=================================\\par\nDUPLICATE BILL #[DUPCOUNT]\\par\n[DUPMSG1]\\par\n[DUPMSG2]\\par\n=================================\\par\n\\par\n${rest
-      .map((line) => `${this.rtfPrintLine(line)}\\par`)
-      .join("\n")}\n\\f2\\fs20\\par\n}`;
+    const headerEnd = lines.findIndex((line) => line.trim() === "");
+    const header = (
+      headerEnd >= 0 ? lines.slice(0, headerEnd) : lines.slice(0, 1)
+    ).flatMap((line) => this.wrapReceiptInfoLine(line));
+    const rest = headerEnd >= 0 ? lines.slice(headerEnd + 1) : lines.slice(1);
+    const headerLines = header
+      .map((line, index) =>
+        index === 0
+          ? `\\f0\\fs18 ${this.escapeRtf(line)}\\par`
+          : `${index === 1 ? "\\f1 " : ""}${this.escapeRtf(line)}\\par`,
+      )
+      .join("\n");
+    const bodyLines = rest.map((line) => this.rtfPrintLine(line)).join("\n");
+
+    const duplicateBlock = includeDuplicate
+      ? `\\par\n=================================\\par\nDUPLICATE BILL #${duplicateCount || ""}\\par\nPrint By: ${this.escapeRtf(printBy || "-")}\\par\nPrint At: ${this.escapeRtf(printAt || "-")}\\par\n=================================\\par\n\\par`
+      : "\\par";
+
+    return `{\\rtf1\\ansi\\ansicpg1252\\deff0\\deflang1033{\\fonttbl{\\f0\\fnil FontB22;}{\\f1\\fnil FontA11;}{\\f2\\fnil Consolas;}}\n\\viewkind4\\uc1\\pard${headerLines}\n${duplicateBlock}\n${bodyLines}\n\\f2\\fs20\\par\n}`;
   }
 
   rtfPrintLine(line) {
-    const escaped = this.escapeRtf(line);
-    if (/^\s*Table /.test(line) || /^Total\s+\d/.test(line)) {
-      return `\\f1 ${escaped}\\f0`;
+    if (/^\s*Table /.test(line)) {
+      return `\\f0 ${this.escapeRtf(line)}\\par`;
     }
-    return escaped;
+
+    if (/^Welcome,?\s*$/.test(line)) {
+      return `\\f1 ${this.escapeRtf(line)}\\par`;
+    }
+
+    const totalMatch = line.match(/^Total\s+([\d,.]+)\s*$/);
+    if (totalMatch) {
+      return `\\f0 ${this.receiptTextLine("Total", totalMatch[1], 20)}\\par\n\\f1`;
+    }
+
+    const escaped = this.escapeRtf(line);
+    return `${escaped}\\par`;
   }
 
   escapeRtf(value) {
@@ -1066,10 +1146,26 @@ class PaymentService {
     return `${left}${" ".repeat(spacing)}${value}`;
   }
 
+  receiptTextLine(label, value, width = 33) {
+    const left = String(label || "");
+    const right = String(value || "");
+    const spacing = Math.max(1, width - left.length - right.length);
+    return `${left}${" ".repeat(spacing)}${right}`;
+  }
+
   centerLine(value, width = 33) {
     const text = String(value || "");
     const leftPadding = Math.max(0, Math.floor((width - text.length) / 2));
     return `${" ".repeat(leftPadding)}${text}`;
+  }
+
+  rightLine(value, width = 33) {
+    return String(value || "").padStart(width, " ");
+  }
+
+  tableLine(tableName, areaName) {
+    const area = String(areaName || "").trim();
+    return area ? `Table ${tableName}/${area}` : `Table ${tableName}`;
   }
 
   finalTotalLine(amount) {
@@ -1088,6 +1184,13 @@ class PaymentService {
     const label = `[1] [${percent}%]`;
     const spacing = Math.max(1, 35 - 12 - label.length - value.length);
     return `${" ".repeat(12)}${label}${" ".repeat(spacing)}${value}`;
+  }
+
+  optionLine(option) {
+    const optionData = option?.Option || {};
+    const name = optionData.op_name || `Option ${option?.op_id || ""}`.trim();
+    const price = this.toNumber(optionData.op_price_mod);
+    return this.receiptLine(`   ${name}`, price);
   }
 }
 

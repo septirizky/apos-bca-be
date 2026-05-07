@@ -2,11 +2,14 @@ const {
   Sequelize,
   sequelize,
   Config,
+  ClientConfig,
   Order,
   OrderDetail,
   Item,
   ItemSubcategory,
   ItemCategory,
+  OrderDetailOption,
+  Options,
   Tables,
   TablesArea,
   Member,
@@ -38,6 +41,7 @@ class BillPrintService {
       const order = await this.loadOrder(orderId, transaction);
       const details = await this.loadDetails(orderId, transaction);
       const calculated = await this.calculate(order, details, transaction);
+      const showAllOption = await this.shouldShowAllOption(transaction);
       const printCount = await this.nextPrintCount(orderId, transaction);
       const now = this.nowWib();
       const messageNow = this.currentWibString();
@@ -58,6 +62,7 @@ class BillPrintService {
         memberLabel,
         tableName,
         areaName,
+        showAllOption,
       });
       const sourceMessage = this.toInitiationRtf(plainMessage);
 
@@ -174,6 +179,15 @@ class BillPrintService {
     return order;
   }
 
+  async shouldShowAllOption(transaction) {
+    const config = await ClientConfig.findOne({
+      where: { c_key: "PAYMENT_SHOW_ALL_OPTION" },
+      attributes: ["c_value"],
+      transaction,
+    });
+    return String(config?.c_value ?? "0") === "1";
+  }
+
   async loadDetails(orderId, transaction) {
     return OrderDetail.findAll({
       where: { o_id: orderId },
@@ -186,6 +200,17 @@ class BillPrintService {
               model: ItemSubcategory,
               required: false,
               include: [{ model: ItemCategory, required: false }],
+            },
+          ],
+        },
+        {
+          model: OrderDetailOption,
+          required: false,
+          include: [
+            {
+              model: Options,
+              attributes: ["op_id", "op_name", "op_price_mod"],
+              required: false,
             },
           ],
         },
@@ -252,6 +277,7 @@ class BillPrintService {
     memberLabel,
     tableName,
     areaName,
+    showAllOption,
   }) {
     const lines = [
       "TAGIHAN SEMENTARA",
@@ -279,6 +305,11 @@ class BillPrintService {
       const itemName = detail.od_name || detail.Item?.i_name || "";
       lines.push(itemName);
       lines.push(this.itemLine(qty, price, itemTotal));
+      if (showAllOption) {
+        (detail.OrderDetailOptions || []).forEach((option) => {
+          lines.push(this.optionLine(option));
+        });
+      }
 
       const discounts = calculated.perItem[detail.od_id]?.discounts || [];
       discounts
@@ -551,6 +582,13 @@ class BillPrintService {
   discountLine(percent, amount) {
     const value = `-${this.formatMoney(amount)}`;
     return `[1] [${percent}%] ${value}`.padStart(PRINT_WIDTH, " ");
+  }
+
+  optionLine(option) {
+    const optionData = option?.Option || {};
+    const name = optionData.op_name || `Option ${option?.op_id || ""}`.trim();
+    const price = this.toNumber(optionData.op_price_mod);
+    return this.receiptLine(`   ${name}`, price);
   }
 
   formatDateTime(value) {

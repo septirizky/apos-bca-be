@@ -1,6 +1,72 @@
 const printerService = require("../services/printerService");
 const billPrintService = require("../services/billPrintService");
+const paymentService = require("../services/paymentService");
 const { LogPrint } = require("../models");
+
+async function prepareFinalBillPrintLog(logPrint, req) {
+  const isReprint = logPrint.lp_printed === "True";
+  const finalWhere = logPrint.lp_id
+    ? { lp_id: logPrint.lp_id }
+    : { is_id: logPrint.is_id, lp_print_type: "Final" };
+
+  if (!isReprint) {
+    await LogPrint.update(
+      {
+        lp_printed: "True",
+        lp_print_time: new Date(),
+      },
+      { where: finalWhere },
+    );
+    return logPrint;
+  }
+
+    const nextCount = (Number(logPrint.lp_count) || 1) + 1;
+    const printBy = extractCashierName(logPrint.lp_message) || req.body?.u_name || req.query?.u_name || "";
+    const printAt = formatPrintDateTime(new Date());
+    const reprintSource = paymentService.toRtfSource(logPrint.lp_message || "", {
+      includeDuplicate: true,
+      duplicateCount: nextCount,
+      printBy,
+      printAt,
+    });
+  const row = logPrint.get({ plain: true });
+  delete row.lp_id;
+
+  await LogPrint.update({ lp_count: nextCount }, { where: finalWhere });
+  return LogPrint.create({
+    ...row,
+    lp_print_type: "BillReprint",
+    lp_message_source: reprintSource,
+    lp_count: nextCount,
+    lp_time: new Date(),
+    lp_printed: "True",
+    lp_print_time: new Date(),
+    lp_ip: req.ip || logPrint.lp_ip || "",
+    pos_id: req.body?.pos_id || logPrint.pos_id || "",
+  });
+}
+
+function formatPrintDateTime(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return (
+    [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0"),
+    ].join("-") +
+    ` ${[
+      String(date.getHours()).padStart(2, "0"),
+      String(date.getMinutes()).padStart(2, "0"),
+      String(date.getSeconds()).padStart(2, "0"),
+    ].join(":")}`
+  );
+}
+
+function extractCashierName(message) {
+  const match = String(message || "").match(/^Cashier\s*:\s*(.+)$/m);
+  return match ? match[1].trim() : "";
+}
 
 class PrintController {
   async printInitiationBill(req, res) {
@@ -78,10 +144,13 @@ class PrintController {
         });
       }
 
+      const printLog = await prepareFinalBillPrintLog(logPrint, req);
+      const content = printLog.lp_message_source || printLog.lp_message;
+
       await printerService.printEpsonNetwork({
         printerIp: printer_ip,
         printerPort: printer_port,
-        content: logPrint.lp_message_source || logPrint.lp_message,
+        content,
       });
 
       res.json({
@@ -112,14 +181,15 @@ class PrintController {
         });
       }
 
+      const printLog = await prepareFinalBillPrintLog(logPrint, req);
       const plainMessage = printerService.normalizeReceiptText(
-        logPrint.lp_message || logPrint.lp_message_source || "",
+        printLog.lp_message || printLog.lp_message_source || "",
       );
 
       res.json({
         success: true,
         lp_message: plainMessage,
-        lp_message_source: logPrint.lp_message_source || "",
+        lp_message_source: printLog.lp_message_source || "",
       });
     } catch (err) {
       res.status(500).json({
@@ -154,6 +224,7 @@ class PrintController {
       });
     }
   }
+
 }
 
 module.exports = new PrintController();
